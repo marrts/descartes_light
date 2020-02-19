@@ -26,11 +26,39 @@
 
 namespace descartes_light
 {
+
+
+struct IKFastFreeDofSampleParams
+{
+    IKFastFreeDofSampleParams() :
+      min_angle(-M_PI),
+      max_angle(M_PI),
+      increment(M_PI / 120)
+    {}
+
+    IKFastFreeDofSampleParams(std::double_t min_angle, std::double_t max_angle, std::double_t increment) :
+      min_angle(min_angle),
+      max_angle(max_angle),
+      increment(increment)
+    {}
+
+    std::vector<double> interpolateFreeDOFValues() const
+    {
+        std::vector<std::double_t> out;
+        for (std::double_t current = min_angle; current < max_angle; current += increment)
+            out.push_back(current);
+        return out;
+    }
+
+    const std::double_t min_angle, max_angle, increment;
+};
+
 template <typename FloatType>
 class IKFastKinematics : public KinematicsInterface<FloatType>
 {
 public:
-  IKFastKinematics(const Eigen::Transform<FloatType, 3, Eigen::Isometry>& world_to_robot_base =
+  IKFastKinematics(const std::vector<IKFastFreeDofSampleParams>& free_params,
+                   const Eigen::Transform<FloatType, 3, Eigen::Isometry>& world_to_robot_base =
                        Eigen::Transform<FloatType, 3, Eigen::Isometry>::Identity(),
                    const Eigen::Transform<FloatType, 3, Eigen::Isometry>& tool0_to_tip =
                        Eigen::Transform<FloatType, 3, Eigen::Isometry>::Identity(),
@@ -47,6 +75,7 @@ public:
   void analyzeIK(const Eigen::Transform<FloatType, 3, Eigen::Isometry>& p) const override;
 
 protected:
+  std::vector<IKFastFreeDofSampleParams> free_params_;
   Eigen::Transform<FloatType, 3, Eigen::Isometry> world_to_robot_base_;
   Eigen::Transform<FloatType, 3, Eigen::Isometry> tool0_to_tip_;
   IsValidFn<FloatType> is_valid_fn_;

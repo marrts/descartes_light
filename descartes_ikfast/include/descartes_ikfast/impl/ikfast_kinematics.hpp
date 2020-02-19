@@ -29,11 +29,13 @@ namespace descartes_light
 {
 template <typename FloatType>
 IKFastKinematics<FloatType>::IKFastKinematics(
+    const std::vector<IKFastFreeDofSampleParams>& free_params,
     const Eigen::Transform<FloatType, 3, Eigen::Isometry>& world_to_robot_base,
     const Eigen::Transform<FloatType, 3, Eigen::Isometry>& tool0_to_tip,
     const IsValidFn<FloatType>& is_valid_fn,
     const GetRedundantSolutionsFn<FloatType>& redundant_sol_fn)
-  : world_to_robot_base_(world_to_robot_base)
+  : free_params_(free_params)
+  , world_to_robot_base_(world_to_robot_base)
   , tool0_to_tip_(tool0_to_tip)
   , is_valid_fn_(is_valid_fn)
   , redundant_sol_fn_(redundant_sol_fn)
@@ -66,87 +68,101 @@ bool IKFastKinematics<FloatType>::ik(const Eigen::Transform<FloatType, 3, Eigen:
   // ordering
   const Eigen::Matrix<IkReal, 3, 3, Eigen::RowMajor> rotation = ikfast_tcp.rotation();
 
-  // Call IK (TODO: Make a better solution list class? One that uses vector instead of list)
-  ikfast::IkSolutionList<IkReal> ikfast_solution_set;
-  ComputeIk(translation.data(), rotation.data(), nullptr, ikfast_solution_set);
-
-  // Unpack the solutions into the output vector
-  const auto n_sols = ikfast_solution_set.GetNumSolutions();
-  int ikfast_dof = dof();
-
-  std::vector<IkReal> ikfast_output;
-  ikfast_output.resize(n_sols * ikfast_dof);
-
-  for (std::size_t i = 0; i < n_sols; ++i)
+  std::vector<std::double_t> values_free;
+  if (free_params_.size() > 0)
   {
-    // This actually walks the list EVERY time from the start of i.
-    const auto& sol = ikfast_solution_set.GetSolution(i);
-    auto* out = ikfast_output.data() + i * ikfast_dof;
-    sol.GetSolution(out, nullptr);
+      values_free = free_params_[0].interpolateFreeDOFValues();
+  }
+  else {
+      values_free.push_back(0.0);
   }
 
-  std::vector<FloatType> sols;
-  sols.insert(end(sols), ikfast_output.begin(), ikfast_output.end());
 
-  // Check the output
-  int num_sol = sols.size() / ikfast_dof;
-  for (int i = 0; i < num_sol; i++)
+  for (std::size_t free_sample_index = 0; free_sample_index < values_free.size(); ++free_sample_index)
   {
-    FloatType* sol = sols.data() + ikfast_dof * i;
-    if (isValid<FloatType>(sol, ikfast_dof))
-    {
-      harmonizeTowardZero<FloatType>(sol, ikfast_dof);  // Modifies 'sol' in place
+      std::vector<double> v_free = {static_cast<double>(values_free[free_sample_index])};
+      // Call IK (TODO: Make a better solution list class? One that uses vector instead of list)
+      ikfast::IkSolutionList<IkReal> ikfast_solution_set;
+      ComputeIk(translation.data(), rotation.data(), v_free.size() > 0 ? &v_free[0] : nullptr, ikfast_solution_set);
 
-      std::vector<FloatType> full_sol;
-      full_sol.insert(end(full_sol), sol, sol + ikfast_dof);  // And then insert the robot arm configuration
+      // Unpack the solutions into the output vector
+      const auto n_sols = ikfast_solution_set.GetNumSolutions();
+      int ikfast_dof = dof();
 
-      if (is_valid_fn && redundant_sol_fn)
+      std::vector<IkReal> ikfast_output;
+      ikfast_output.resize(n_sols * ikfast_dof);
+
+      for (std::size_t i = 0; i < n_sols; ++i)
       {
-        if (is_valid_fn(full_sol.data()))
-          solution_set.insert(end(solution_set), full_sol.data(), full_sol.data() + ikfast_dof);  // If good then add to
-                                                                                                  // solution set
+        // This actually walks the list EVERY time from the start of i.
+        const auto& sol = ikfast_solution_set.GetSolution(i);
+        auto* out = ikfast_output.data() + i * ikfast_dof;
+        sol.GetSolution(out, nullptr);
+      }
 
-        std::vector<FloatType> redundant_sols = redundant_sol_fn(full_sol.data());
-        if (!redundant_sols.empty())
+      std::vector<FloatType> sols;
+      sols.insert(end(sols), ikfast_output.begin(), ikfast_output.end());
+
+      // Check the output
+      int num_sol = sols.size() / ikfast_dof;
+      for (int i = 0; i < num_sol; i++)
+      {
+        FloatType* sol = sols.data() + ikfast_dof * i;
+        if (isValid<FloatType>(sol, ikfast_dof))
         {
-          int num_sol = redundant_sols.size() / ikfast_dof;
-          for (int s = 0; s < num_sol; ++s)
+          harmonizeTowardZero<FloatType>(sol, ikfast_dof);  // Modifies 'sol' in place
+
+          std::vector<FloatType> full_sol;
+          full_sol.insert(end(full_sol), sol, sol + ikfast_dof);  // And then insert the robot arm configuration
+
+          if (is_valid_fn && redundant_sol_fn)
           {
-            FloatType* redundant_sol = redundant_sols.data() + ikfast_dof * s;
-            if (is_valid_fn(redundant_sol))
-              solution_set.insert(end(solution_set), redundant_sol, redundant_sol + ikfast_dof);  // If good then add to
-                                                                                                  // solution set
+            if (is_valid_fn(full_sol.data()))
+              solution_set.insert(end(solution_set), full_sol.data(), full_sol.data() + ikfast_dof);  // If good then add to
+                                                                                                      // solution set
+
+            std::vector<FloatType> redundant_sols = redundant_sol_fn(full_sol.data());
+            if (!redundant_sols.empty())
+            {
+              int num_sol = redundant_sols.size() / ikfast_dof;
+              for (int s = 0; s < num_sol; ++s)
+              {
+                FloatType* redundant_sol = redundant_sols.data() + ikfast_dof * s;
+                if (is_valid_fn(redundant_sol))
+                  solution_set.insert(end(solution_set), redundant_sol, redundant_sol + ikfast_dof);  // If good then add to
+                                                                                                      // solution set
+              }
+            }
+          }
+          else if (is_valid_fn && !redundant_sol_fn)
+          {
+            if (is_valid_fn(full_sol.data()))
+              solution_set.insert(end(solution_set), full_sol.data(), full_sol.data() + ikfast_dof);  // If good then add to
+                                                                                                      // solution set
+          }
+          else if (!is_valid_fn && redundant_sol_fn)
+          {
+            solution_set.insert(end(solution_set), full_sol.data(), full_sol.data() + ikfast_dof);  // If good then add to
+                                                                                                    // solution set
+
+            std::vector<FloatType> redundant_sols = redundant_sol_fn(full_sol.data());
+            if (!redundant_sols.empty())
+            {
+              int num_sol = redundant_sols.size() / ikfast_dof;
+              for (int s = 0; s < num_sol; ++s)
+              {
+                FloatType* redundant_sol = redundant_sols.data() + ikfast_dof * s;
+                solution_set.insert(end(solution_set), redundant_sol, redundant_sol + ikfast_dof);  // If good then add to
+                                                                                                    // solution set
+              }
+            }
+          }
+          else
+          {
+            solution_set.insert(end(solution_set), full_sol.data(), full_sol.data() + ikfast_dof);
           }
         }
       }
-      else if (is_valid_fn && !redundant_sol_fn)
-      {
-        if (is_valid_fn(full_sol.data()))
-          solution_set.insert(end(solution_set), full_sol.data(), full_sol.data() + ikfast_dof);  // If good then add to
-                                                                                                  // solution set
-      }
-      else if (!is_valid_fn && redundant_sol_fn)
-      {
-        solution_set.insert(end(solution_set), full_sol.data(), full_sol.data() + ikfast_dof);  // If good then add to
-                                                                                                // solution set
-
-        std::vector<FloatType> redundant_sols = redundant_sol_fn(full_sol.data());
-        if (!redundant_sols.empty())
-        {
-          int num_sol = redundant_sols.size() / ikfast_dof;
-          for (int s = 0; s < num_sol; ++s)
-          {
-            FloatType* redundant_sol = redundant_sols.data() + ikfast_dof * s;
-            solution_set.insert(end(solution_set), redundant_sol, redundant_sol + ikfast_dof);  // If good then add to
-                                                                                                // solution set
-          }
-        }
-      }
-      else
-      {
-        solution_set.insert(end(solution_set), full_sol.data(), full_sol.data() + ikfast_dof);
-      }
-    }
   }
 
   return !solution_set.empty();
