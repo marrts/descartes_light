@@ -97,7 +97,9 @@ bool IKFastKinematics<FloatType>::ik(const Eigen::Transform<FloatType, 3, Eigen:
         // This actually walks the list EVERY time from the start of i.
         const auto& sol = ikfast_solution_set.GetSolution(i);
         auto* out = ikfast_output.data() + i * ikfast_dof;
-        sol.GetSolution(out, nullptr);
+        std::vector<IkReal> vsolfree(sol.GetFree().size());
+
+        sol.GetSolution(out, vsolfree.size() > 0 ? &vsolfree[0] : nullptr);
       }
 
       std::vector<FloatType> sols;
