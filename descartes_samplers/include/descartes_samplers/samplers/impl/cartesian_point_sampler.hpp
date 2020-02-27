@@ -20,7 +20,7 @@
 
 #include "descartes_samplers/samplers/cartesian_point_sampler.h"
 
-const static std::size_t opw_dof = 6;
+const static std::size_t opw_dof = 7;
 
 namespace descartes_light
 {
