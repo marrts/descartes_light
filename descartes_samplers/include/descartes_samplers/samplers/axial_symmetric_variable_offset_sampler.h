@@ -33,6 +33,7 @@ public:
   AxialSymmetricVariableOffsetSampler(const Eigen::Transform<FloatType, 3, Eigen::Isometry>& tool_pose,
                                       const typename KinematicsInterface<FloatType>::Ptr robot_kin,
                                       const FloatType radial_sample_resolution,
+                                      const FloatType z_offset_min,
                                       const FloatType z_offset_max,
                                       const FloatType z_offset_increment,
                                       const typename CollisionInterface<FloatType>::Ptr collision,
@@ -50,7 +51,7 @@ private:
   FloatType radial_sample_res_;
   bool allow_collision_;
 
-  const FloatType z_offset_max_, z_offset_increment_;
+  const FloatType z_offset_min_, z_offset_max_, z_offset_increment_;
 };
 
 using AxialSymmetricVariableOffsetSamplerF = AxialSymmetricVariableOffsetSampler<float>;

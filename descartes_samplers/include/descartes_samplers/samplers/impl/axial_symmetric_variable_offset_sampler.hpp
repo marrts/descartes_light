@@ -30,6 +30,7 @@ AxialSymmetricVariableOffsetSampler<FloatType>::AxialSymmetricVariableOffsetSamp
     const Eigen::Transform<FloatType, 3, Eigen::Isometry>& tool_pose,
     const typename KinematicsInterface<FloatType>::Ptr robot_kin,
     const FloatType radial_sample_resolution,
+    const FloatType z_offset_min,
     const FloatType z_offset_max,
     const FloatType z_offset_increment,
     const typename CollisionInterface<FloatType>::Ptr collision,
@@ -39,6 +40,7 @@ AxialSymmetricVariableOffsetSampler<FloatType>::AxialSymmetricVariableOffsetSamp
   , collision_(collision)
   , radial_sample_res_(radial_sample_resolution)
   , allow_collision_(allow_collision)
+  , z_offset_min_(z_offset_min)
   , z_offset_max_(z_offset_max)
   , z_offset_increment_(z_offset_increment)
 {
@@ -51,7 +53,7 @@ bool AxialSymmetricVariableOffsetSampler<FloatType>::sample(std::vector<FloatTyp
 
   const auto nSamplesInBuffer = [](const std::vector<FloatType>& v) -> std::size_t { return v.size() / opw_dof; };
 
-  FloatType z_offset_current = static_cast<FloatType>(0.0);
+  FloatType z_offset_current = z_offset_min_;
 
   while (solution_set.empty() && z_offset_current <= z_offset_max_)  // continue until solutions have been found or the
                                                                      // maximum offset has been reached
